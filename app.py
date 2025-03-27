@@ -17,9 +17,14 @@ HEADERS = {
 BASE_URL = "https://api.nibo.com.br/empresas/v1/schedules/debit"
 
 # Buscar agendamentos
-def listar_pagamentos():
+def listar_pagamentos(data_inicio=None, data_fim=None):
     try:
-        response = requests.get(BASE_URL, headers=HEADERS)
+        
+    params = {}
+    if data_inicio and data_fim:
+        filtro = f"dueDate ge {data_inicio} and dueDate le {data_fim}"
+        params["$filter"] = filtro
+    response = requests.get(BASE_URL, headers=HEADERS, params=params)
         st.code(f"Status: {response.status_code}")
         st.code(f"Resposta: {response.text}")
         response.raise_for_status()
@@ -44,13 +49,22 @@ def atualizar_pagamento(schedule_id, dados):
         st.text(e)
 
 # Interface
-pagamentos = listar_pagamentos()
+
+st.subheader("Filtrar por período")
+col1, col2 = st.columns(2)
+data_inicio = col1.date_input("Data início")
+data_fim = col2.date_input("Data fim")
+
+pagamentos = []
+if st.button("Buscar agendamentos"):
+    pagamentos = listar_pagamentos(data_inicio.strftime("%Y-%m-%d"), data_fim.strftime("%Y-%m-%d"))
+
 if pagamentos:
     df = pd.DataFrame(pagamentos)
     st.dataframe(df)
 
     st.header("Selecionar e Editar Agendamento")
-    ids = df['id'].tolist()
+    ids = df['scheduleId'].tolist()
     escolha = st.selectbox("Escolha um agendamento", ids)
 
     ag = df[df['id'] == escolha].iloc[0]
