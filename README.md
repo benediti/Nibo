@@ -1,32 +1,31 @@
 
-# Editor de Agendamentos Nibo (com Rateio)
+# Nibo App - Editor de Agendamentos
 
-Este é um app em Streamlit para:
+Este app em Streamlit permite:
 
-- Buscar agendamentos no Nibo
-- Editar dados como descrição, datas, valor
-- Fazer upload de um Excel com rateio por centro de custo
-- Enviar a atualização via API Nibo
+✅ Buscar agendamentos via API do Nibo  
+✅ Editar dados (valor, descrição, datas)  
+✅ Fazer upload de um Excel com rateio por centro de custo  
+✅ Enviar atualização para o Nibo
 
-## Como rodar
+## Como rodar localmente
 
-1. Instale as dependências:
-```
-pip install streamlit pandas openpyxl requests
-```
-
-2. Rode o app:
-```
+```bash
+pip install -r requirements.txt
 streamlit run app.py
 ```
 
-3. Insira seu token da API do Nibo no código (linha com `TOKEN = "Bearer SEU_TOKEN_AQUI"`)
+## Estrutura esperada do Excel
 
-## Estrutura esperada do Excel de Rateio
+| costCenterId | value   |
+|--------------|---------|
+| UUID1        | 729,20  |
+| UUID2        | 1000,00 |
 
-| costCenterId                          | value   |
-|---------------------------------------|---------|
-| 8c7586fa-8f8b-4f48-93cd-115fec84a5cb  | 729,20  |
-| outro-id                              | 1000,00 |
+## Variáveis secretas (no Streamlit Cloud)
 
-- Use `,` como separador decimal.
+Em `.streamlit/secrets.toml`:
+
+```
+NIBO_API_KEY = "SUA_CHAVE_API_DO_NIBO"
+```

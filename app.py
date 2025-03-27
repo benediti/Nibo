@@ -1,92 +1,91 @@
 
 import streamlit as st
-import pandas as pd
 import requests
-import json
-from io import BytesIO
+import pandas as pd
+import os
 
-# CONFIGURAÇÕES
-TOKEN = "Bearer SEU_TOKEN_AQUI"
-BASE_URL = "https://api.nibo.com.br/empresas/v1/schedules/debit"
+# Título
+st.title("Gerenciador de Pagamentos Agendados - Nibo")
+
+# Token seguro via Streamlit Secrets
+API_TOKEN = st.secrets["NIBO_API_KEY"]
 HEADERS = {
     "accept": "application/json",
     "content-type": "application/json",
-    "authorization": TOKEN
+    "ApiToken": API_TOKEN
 }
+BASE_URL = "https://api.nibo.com.br/empresas/v1/schedules/debit"
 
-# FUNÇÃO PARA BUSCAR AGENDAMENTOS
-def buscar_agendamentos(top=10):
-    params = {"$top": top}
-    response = requests.get(BASE_URL, headers=HEADERS, params=params)
-    if response.status_code == 200:
-        return response.json()
-    else:
-        st.error("Erro ao buscar agendamentos")
+# Buscar agendamentos
+def listar_pagamentos():
+    try:
+        response = requests.get(BASE_URL, headers=HEADERS)
+        st.code(f"Status: {response.status_code}")
+        st.code(f"Resposta: {response.text}")
+        response.raise_for_status()
+        data = response.json()
+        return data.get("items", [])
+    except requests.exceptions.RequestException as e:
+        st.error("Erro ao buscar pagamentos agendados:")
+        st.text(e)
         return []
 
-# FUNÇÃO PARA MONTAR O RATEIO
-def montar_rateio_excel(uploaded_file):
-    df = pd.read_excel(uploaded_file)
-    df.columns = ["costCenterId", "value"]
-    df["value"] = df["value"].astype(str).str.replace(".", "", regex=False)
-    df["value"] = df["value"].str.replace(",", ".", regex=False).astype(float)
-    df_agrupado = df.groupby("costCenterId", as_index=False).sum()
-
-    return [
-        {"id": row["costCenterId"], "value": round(row["value"], 2)}
-        for _, row in df_agrupado.iterrows()
-    ]
-
-# FUNÇÃO PARA ATUALIZAR AGENDAMENTO
-def atualizar_agendamento(schedule_id, payload):
+# Atualizar pagamento
+def atualizar_pagamento(schedule_id, dados):
     url = f"{BASE_URL}/{schedule_id}"
-    response = requests.put(url, headers=HEADERS, data=json.dumps(payload))
-    return response.status_code == 204
+    try:
+        response = requests.put(url, headers=HEADERS, json=dados)
+        st.code(f"Status: {response.status_code}")
+        st.code(f"Resposta: {response.text}")
+        response.raise_for_status()
+        st.success("Pagamento atualizado com sucesso!")
+    except requests.exceptions.RequestException as e:
+        st.error("Erro ao atualizar pagamento:")
+        st.text(e)
 
-# INTERFACE STREAMLIT
-st.title("Editor de Agendamentos Nibo")
+# Interface
+pagamentos = listar_pagamentos()
+if pagamentos:
+    df = pd.DataFrame(pagamentos)
+    st.dataframe(df)
 
-agendamentos = buscar_agendamentos(top=20)
+    st.header("Selecionar e Editar Agendamento")
+    ids = df['id'].tolist()
+    escolha = st.selectbox("Escolha um agendamento", ids)
 
-if agendamentos:
-    opcoes = [f"{ag['description']} | Valor: R$ {ag['value']} | ID: {ag['id']}" for ag in agendamentos]
-    escolha = st.selectbox("Selecione um agendamento para editar:", options=opcoes)
-    idx = opcoes.index(escolha)
-    ag = agendamentos[idx]
-
-    st.subheader("Editar informações do agendamento")
+    ag = df[df['id'] == escolha].iloc[0]
+    valor = st.number_input("Valor", value=float(ag["value"]))
     descricao = st.text_input("Descrição", value=ag.get("description", ""))
-    valor = st.number_input("Valor", value=float(ag.get("value", 0)))
-    due_date = st.date_input("Data de vencimento")
-    schedule_date = st.date_input("Data prevista")
-    accrual_date = st.date_input("Data da competência")
+    due = st.date_input("Vencimento")
+    schedule = st.date_input("Data prevista")
+    accrual = st.date_input("Competência")
     referencia = st.text_input("Referência", value=ag.get("reference", ""))
-    is_flagged = st.checkbox("Marcar como favorito?", value=ag.get("isFlagged", False))
 
-    st.subheader("Upload do rateio (Excel)")
-    uploaded_file = st.file_uploader("Arquivo Excel com colunas: costCenterId, value", type=["xlsx"])
+    st.header("Upload de Rateio (Excel com 'costCenterId' e 'value')")
+    arquivo = st.file_uploader("Escolha um arquivo Excel", type=["xlsx"])
+    if arquivo:
+        rateio_df = pd.read_excel(arquivo)
+        rateio_df.columns = ["id", "value"]
+        rateio_df["value"] = rateio_df["value"].astype(str).str.replace(".", "", regex=False)
+        rateio_df["value"] = rateio_df["value"].str.replace(",", ".", regex=False).astype(float)
+        st.dataframe(rateio_df)
 
-    if st.button("Atualizar Agendamento"):
-        if not uploaded_file:
-            st.warning("Envie um arquivo Excel com os rateios.")
+    if st.button("Atualizar agendamento"):
+        if not arquivo:
+            st.warning("Você precisa enviar o arquivo de rateio.")
         else:
-            rateio = montar_rateio_excel(uploaded_file)
-
             payload = {
                 "stakeholderId": ag["stakeholder"]["id"],
-                "dueDate": due_date.isoformat(),
-                "scheduleDate": schedule_date.isoformat(),
-                "accrualDate": accrual_date.isoformat(),
+                "dueDate": due.isoformat(),
+                "scheduleDate": schedule.isoformat(),
+                "accrualDate": accrual.isoformat(),
                 "reference": referencia,
                 "description": descricao,
-                "isFlagged": is_flagged,
+                "isFlagged": ag.get("isFlagged", False),
                 "categories": [{"id": ag["categories"][0]["id"]}],
                 "costCenterValueType": "0",
-                "costcenters": rateio
+                "costcenters": rateio_df.to_dict(orient="records")
             }
-
-            sucesso = atualizar_agendamento(ag["id"], payload)
-            if sucesso:
-                st.success("Agendamento atualizado com sucesso!")
-            else:
-                st.error("Erro ao atualizar o agendamento.")
+            atualizar_pagamento(escolha, payload)
+else:
+    st.warning("Nenhum agendamento encontrado.")
